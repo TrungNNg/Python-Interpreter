@@ -1,0 +1,32 @@
+# start of code that tests level 3 features
+print()
+def main():
+   global a
+   x = 20
+   a = 19
+   f()
+   print(a)
+   print(x)
+   a = x 
+   print(h(a))
+   print(h(21))
+def f():
+   a = -1
+   x = 77
+   g()
+def g():
+  x = 18
+  print(x)
+
+def h(a):
+  x = a + 1
+  return x
+
+main()
+x = input('enter 23\n')
+x = int(x)
+if x != 23:
+   print('error')
+else:
+  print('\'twenty#four\'')
+

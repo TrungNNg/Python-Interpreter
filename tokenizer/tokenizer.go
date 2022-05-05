@@ -49,6 +49,11 @@ const (
     COLON
     INDENT
     DEDENT
+    DEF     // start of t3
+    RETURN
+    GLOBAL
+    INPUT
+    INT
 )
 
 // keywords and their category
@@ -56,6 +61,9 @@ var keyWords = map[string]int {
     "print" : PRINT, "None" : NONE, "True" : TRUE,
     "False" : FALSE, "pass" : PASS, "if" : IF,
     "else" : ELSE, "while" : WHILE,
+    //start of t3 
+    "def" : DEF, "return" : RETURN, "global" : GLOBAL, 
+    "input" : INPUT, "int" : INT,
 }
 
 // one-character tokens and their category
