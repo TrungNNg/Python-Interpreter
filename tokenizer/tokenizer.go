@@ -1,5 +1,5 @@
 // Tokenizer for syntax of the Python programming language
-package main
+package tokenizer
 
 import (
     "fmt"
@@ -13,6 +13,14 @@ type token struct {
     column int
     category int   // see token categories below
     lexeme string  // the literal string of the token
+}
+
+// exported token struct
+type Token struct {
+    Row int
+    Column int
+    Category int
+    Lexeme string
 }
 
 // constants to represent token categories
@@ -73,6 +81,9 @@ var smallTokens = map[string]int {
     "<" : LESSTHAN, "<=" : LESSEQUAL, ">" : GREATERTHAN, ">=" : GREATEREQUAL,
     "!" : ERROR, "!=" : NOTEQUAL, "," : COMMA, ":" : COLON, "/" : DIV,
 }
+
+// exported tokenlist
+var TokenList []Token
 
 // package level var,
 var tokenlist []token // store tokens
@@ -272,14 +283,27 @@ func readSourceFile() string {
     } 
 }
 
-func main() {
+// exported function
+/* read cmd arg file and build tokenlist
+func start() {
     // read source from source python file
     source = readSourceFile()
     tokenizer()
+    
     for _, token := range tokenlist {
         fmt.Printf("%d %d %s\n", token.row, token.column, string(token.lexeme))
     }
     fmt.Println("length of tokenlist" , len(tokenlist))
+}
+*/
+
+// create copy of tokenlist and return the copy list
+func BuildTokenList() {
+    source = readSourceFile()
+    tokenizer()
+    for _, token := range tokenlist {
+        TokenList = append(TokenList, Token{Row: token.row, Column: token.column, Category: token.category, Lexeme: token.lexeme})
+    }
 }
 
 
