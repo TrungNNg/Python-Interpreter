@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 	. "test1/tokenizer"
-	"strconv"
+	//"strconv"
 )
 
 // global var
@@ -49,6 +49,7 @@ func stackPop() interface{} {
 func consume(expectedCategory int) {
 	if tokenlist[tokenIndex].Category != expectedCategory {
 		fmt.Println("Not match, expecting",expectedCategory, "on line", tokenlist[tokenIndex].Row)
+		fmt.Println("current token :", token.Lexeme)
 		os.Exit(1)
 	} else {
 		// no error advance to next token
@@ -69,21 +70,28 @@ func advance() {
 // parse all valid stmt, 
 // <program> -> <stmt>* EOF
 func program() {
-	for token.Category == PRINT || token.Category == NAME {
+	for token.Category == PRINT || token.Category == NAME || token.Category == IF || token.Category == WHILE || token.Category == PASS {
 		stmt()
 	}
-	// can not call consume(EOF) because advance() will yield error
+	// can not call consume(EOF) because advance() will yield out of range error
 	if token.Category != EOF {
-		fmt.Println("Expecting EOF")
+		fmt.Println("Expecting EOF, got", token.Category)
 		os.Exit(1)
 	}
 }
 
-// <stmt> -> <simplestmt> NEWLINE
+// <stmt> -> <simplestmt> NEWLINE | compoundstmt  
+//*compoundstmt does not have NEWLINE because <codeblock> already consume it
+
 // <simplestmt> -> <assignmentstmt> | <printstmt>
+// <compoundstmt> -> <ifstmt> | <whilestmt>
 func stmt() {
-	simplestmt()
-	consume(NEWLINE)
+	if token.Category == NAME || token.Category == PRINT || token.Category == PASS {
+		simplestmt()
+		consume(NEWLINE)
+	} else if token.Category == WHILE || token.Category == IF {
+		compoundstmt()
+	}
 }
 
 func simplestmt() {
@@ -91,53 +99,139 @@ func simplestmt() {
 		assignmentstmt()
 	} else if token.Category == PRINT {
 		printstmt()
+	}else if token.Category == PASS {
+		passstmt()
 	} else {
-		fmt.Println("Expecting statment, got", token.Lexeme)
+		fmt.Println("Expecting NAME or PRINT or PASS, got", token.Lexeme)
 	}
 }
 
-// <assignmentstmt> -> NAME "=" <expr>
-func assignmentstmt() {
-	left := token.Lexeme
-	advance() // simplestmt() already check this token is NAME
-	consume(ASSIGNOP) 
-	expr()
-	symtab[left] = stackPop()
+func compoundstmt() {
+	if token.Category == IF {
+		ifstmt()
+	} else if token.Category == WHILE {
+		whilestmt()
+	} else {
+		fmt.Println("Expecting IF or WHILE got", token.Lexeme, "at line", token.Row)
+		os.Exit(1)
+	}
 }
 
-// <printstmt> -> "print" "(" <expr> ")"
+// <assignmentstmt> -> NAME "=" <relexpr>
+func assignmentstmt() {
+	//left := token.Lexeme
+	advance() // simplestmt() already check this token is NAME
+	consume(ASSIGNOP) 
+	relexpr()
+	//symtab[left] = stackPop()
+}
+
+// <printstmt> -> "print" "(" [<relexpr> (COMMA <relexpr>)* [COMMA]] ")"
 func printstmt() {
 	advance()
+	//fmt.Println("current token lexeme", token.Lexeme)
 	consume(LEFTPARENT)
-	expr()
-	fmt.Println(stackPop())
+	//fmt.Println("current token lexeme after (", token.Lexeme)
+	if token.Category != RIGHTPARENT {
+		relexpr()
+		for token.Category == COMMA {
+			// there are 2 cases:  ,e OR ,)
+			if tokenlist[tokenIndex + 1].Category == RIGHTPARENT {
+				advance()	
+			} else {
+				advance()
+				relexpr()
+			}
+		}
+	}
+	//fmt.Println(stackPop())
 	consume(RIGHTPARENT)
 }
 
-// <expr> -> <term> ("+" <term>)*
-func expr() {
-	term()
-	for token.Category == PLUS {
+func passstmt() {
+	consume(PASS)
+}
+
+//<ifstmt> -> "if" <relexpr> ":" <codeblock> ["else" ":" <codeblock>]
+func ifstmt() {
+	advance()
+	relexpr()
+	consume(COLON)
+	codeblock()
+	if token.Category == ELSE {
 		advance()
-		term()
-		rightop := stackPop()
-		leftop := stackPop() 
-		stack = append(stack, rightop.(int) + leftop.(int))
-		// need to check type assersion
+		consume(COLON)
+		codeblock()
 	}
 }
 
-// <term> -> <factor> ("*" <factor>)*
+// <whilestmt> -> "while" "(" <relexpr> ")" ":" <codeblock>
+func whilestmt() {
+	advance()
+	relexpr()
+	consume(COLON)
+	codeblock()
+}
+
+// <codeblock> -> NEWLINE INDENT stmt* DEDENT
+func codeblock() {
+	consume(NEWLINE)
+	consume(INDENT)
+    for token.Category == PRINT || token.Category == NAME || token.Category == IF || token.Category == WHILE || token.Category == PASS {
+    	stmt()
+    }
+	consume(DEDENT)
+}
+
+// <expr> -> <term> (("+" | "-") <term>)*
+func expr() {
+	term()
+	for token.Category == PLUS || token.Category == MINUS {
+		advance()
+		term()
+		/*
+		rightop := stackPop()
+		leftop := stackPop()
+		if token.Category == PLUS{
+			stack = append(stack, rightop.(int) + leftop.(int))
+		} else {
+			stack = append(stack, rightop.(int) - leftop.(int))
+		}
+		*/
+	}
+}
+
+// <relexpr> -> <expr> [CONDITIONALOP <expr>]
+func relexpr() {
+	expr()
+
+	switch token.Category {
+	case EQUAL, NOTEQUAL, LESSTHAN, LESSEQUAL, GREATERTHAN, GREATEREQUAL:
+		advance()
+		expr()
+	//default:
+		// fmt.Println("Expecting relational operator, got", token.Lexeme)
+		// os.Exit(1)
+	}
+}
+
+// <term> -> <factor> (("*" | "/") <factor>)*
 func term() {
 	sign = 1
 	factor()
-	for token.Category == TIMES {
+	for token.Category == TIMES || token.Category == DIV {
 		advance()
 		sign = 1
 		factor()
+		/*
 		rightop := stackPop()
 		leftop := stackPop()
-		stack = append(stack, rightop.(int) * leftop.(int))
+		if token.Category == TIMES {
+			stack = append(stack, rightop.(int) * leftop.(int))
+		} else {
+			stack = append(stack, rightop.(int) / leftop.(int))   // integer div need float div
+		}
+		*/
 	}
 }
 
@@ -145,11 +239,16 @@ func term() {
   <factor> -> "+" <factor>
   <factor> -> "-" <factor>
   <factor> -> UNSIGNEDINT
+  <factor> -> UNSIGNEDFLOAT
   <factor> -> NAME
   <factor> -> "(" <expr> ")"
+  <factor> -> STRING
+  <factor> -> TRUE
+  <factor> -> FALSE
+  <factor> -> NONE
 */
 func factor() {
-	if token.Category == PLUS {
+	if token.Category == PLUS {					// change to switch
 		advance()
 		factor()
 	} else if token.Category == MINUS {
@@ -157,38 +256,46 @@ func factor() {
 		advance()
 		factor()
 	} else if token.Category == UNSIGNEDINT {
-		i, _ := strconv.Atoi(token.Lexeme)       // need handle error here
-		stack = append(stack, sign * i)
+		//i, _ := strconv.Atoi(token.Lexeme)       // need handle error here
+		//stack = append(stack, sign * i)
+		advance()
+	} else if token.Category == UNSIGNEDFLOAT {
 		advance()
 	} else if token.Category == NAME {
 		// check if this var is declared (in symtab)
 		// if it declared push value from symtab to stack
+		/*
 		if v, ok := symtab[token.Lexeme]; ok {
 			stack = append(stack, sign * v.(int))  // will panic if not int
 		} else {
 			fmt.Printf("Name %s not declared\n", token.Lexeme)
 			os.Exit(1)
 		}
+		*/
 		advance()
 	} else if token.Category == LEFTPARENT {
-		saveSign := sign
+		//saveSign := sign
 		advance()
-		expr()
+		relexpr()
+		/*
 		if saveSign == -1 {
-			stack[len(stack)-1] = -stack[len(stack)-1].(int) // this work
+			stack[len(stack)-1] = -stack[len(stack)-1].(int)
 		}
+		*/
 		consume(RIGHTPARENT)
+	} else if token.Category == STRING {
+		advance()
+	} else if token.Category == TRUE {
+		advance()
+	} else if token.Category == FALSE {
+		advance()
+	} else if token.Category == NONE {
+		advance()
 	} else {
 		fmt.Println("Expecting factor")
 		os.Exit(1)
 	}
 }
-
-/*
-	Build interpreter. Now that i have a perser, how can i build an interpreter. What is an
-	interpreter? a program that can execute the code, i have the parser which can go to smallest
-	factor, so start with factor, i need a way to save value.
- */
 
 func main() {
     // tokenize input file and store in tokenlist
@@ -196,7 +303,7 @@ func main() {
 	tokenlist = TokenList
 	//PRINT token list
 	// for _, token := range tokenlist {
- //        fmt.Printf("%d %d %s\n", token.Row, token.Column, token.Lexeme)
+ //         fmt.Printf("%d %d %s\n", token.Row, token.Column, token.Lexeme)
  //    }
  //    fmt.Println("length of tokenlist" , len(tokenlist))
 	
