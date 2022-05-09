@@ -70,7 +70,8 @@ func advance() {
 // parse all valid stmt, 
 // <program> -> <stmt>* EOF
 func program() {
-	for token.Category == PRINT || token.Category == NAME || token.Category == IF || token.Category == WHILE || token.Category == PASS {
+	m := map[int]bool{PRINT:true,NAME:true,IF:true,WHILE:true,PASS:true,DEF:true,}
+	for _,ok := m[token.Category]; ok; ok = m[token.Category] {
 		stmt()
 	}
 	// can not call consume(EOF) because advance() will yield out of range error
@@ -86,23 +87,34 @@ func program() {
 // <simplestmt> -> <assignmentstmt> | <printstmt>
 // <compoundstmt> -> <ifstmt> | <whilestmt>
 func stmt() {
-	if token.Category == NAME || token.Category == PRINT || token.Category == PASS {
+	switch token.Category {
+	case NAME, PRINT, PASS, RETURN, GLOBAL:
 		simplestmt()
 		consume(NEWLINE)
-	} else if token.Category == WHILE || token.Category == IF {
+	case WHILE, IF:
 		compoundstmt()
 	}
 }
 
 func simplestmt() {
-	if token.Category == NAME {
-		assignmentstmt()
-	} else if token.Category == PRINT {
+	switch token.Category {
+	case NAME: // can be assignstmt a = e or functioncall f()  
+		if tokenlist[tokenIndex+1].Category == ASSIGNOP {
+			assignmentstmt()
+		} else if tokenlist[tokenIndex+1].Category == LEFTPARENT {
+			functioncall()
+		}
+	case PRINT:
 		printstmt()
-	}else if token.Category == PASS {
+	case PASS:
 		passstmt()
-	} else {
-		fmt.Println("Expecting NAME or PRINT or PASS, got", token.Lexeme)
+	case RETURN:
+		returnstmt()
+	case GLOBAL:
+		globalstmt()
+	default:
+		fmt.Println("Expecting statement, got", token.Lexeme)
+		os.Exit(1)
 	}
 }
 
@@ -111,6 +123,8 @@ func compoundstmt() {
 		ifstmt()
 	} else if token.Category == WHILE {
 		whilestmt()
+	} else if token.Category == DEF {
+		defstmt()
 	} else {
 		fmt.Println("Expecting IF or WHILE got", token.Lexeme, "at line", token.Row)
 		os.Exit(1)
@@ -152,6 +166,38 @@ func passstmt() {
 	consume(PASS)
 }
 
+// functioncall -> NAME "(" [relexpr ("," relexpr)*] ")"
+func functioncall() {
+	advance() // pass NAME
+	consume(LEFTPARENT)
+	if token.Category != RIGHTPARENT {
+		relexpr()
+		for token.Category == COMMA {
+			consume(COMMA)
+			relexpr()
+		}
+	}
+	consume(RIGHTPARENT)
+}
+
+// returnstmt -> RETURN [<relexpr>]
+func returnstmt() {
+	advance()
+	if token.Category != NEWLINE {
+		relexpr()
+	}
+}
+
+// globalstmt -> GLOBAL NAME ("," NAME)
+func globalstmt() {
+	advance()
+	consume(NAME)
+	for token.Category == COMMA {
+		advance()
+		consume(NAME)
+	}
+}
+
 //<ifstmt> -> "if" <relexpr> ":" <codeblock> ["else" ":" <codeblock>]
 func ifstmt() {
 	advance()
@@ -173,11 +219,30 @@ func whilestmt() {
 	codeblock()
 }
 
-// <codeblock> -> NEWLINE INDENT stmt* DEDENT
+// defstmt -> DEF NAME "(" [NAME ("," NAME)*] ")" ":" <codeblock>
+func defstmt() {
+	advance()
+	consume(NAME)
+	consume(LEFTPARENT)
+	if token.Category != RIGHTPARENT {
+		consume(NAME)
+		for token.Category == COMMA {
+			advance()
+			consume(NAME)
+		}
+	}
+	consume(RIGHTPARENT)
+	consume(COLON)
+	codeblock()
+}
+
+// <codeblock> -> NEWLINE INDENT stmt+ DEDENT
 func codeblock() {
 	consume(NEWLINE)
 	consume(INDENT)
-    for token.Category == PRINT || token.Category == NAME || token.Category == IF || token.Category == WHILE || token.Category == PASS {
+	stmt() // must have at least 1 stmt
+	m := map[int]bool{PRINT:true,NAME:true,IF:true,WHILE:true,PASS:true, GLOBAL:true, RETURN:true,}
+    for _,ok := m[token.Category]; ok; ok = m[token.Category] {
     	stmt()
     }
 	consume(DEDENT)
@@ -246,6 +311,10 @@ func term() {
   <factor> -> TRUE
   <factor> -> FALSE
   <factor> -> NONE
+  <factor> -> INPUT "(" STRING ")"
+  <factor> -> INT "(" <relexpr> ")"
+  <factor> -> <functioncal>          // how to know when a factor is a NAME or function call
+  									 // 1 + a or 1 + a()
 */
 func factor() {
 	if token.Category == PLUS {					// change to switch
@@ -272,7 +341,13 @@ func factor() {
 			os.Exit(1)
 		}
 		*/
-		advance()
+
+		// 2 cases NAME or function call
+		if tokenlist[tokenIndex+1].Category == LEFTPARENT {
+			functioncall()
+		} else if tokenlist[tokenIndex+1].Category != LEFTPARENT {
+			advance()
+		}
 	} else if token.Category == LEFTPARENT {
 		//saveSign := sign
 		advance()
@@ -291,11 +366,44 @@ func factor() {
 		advance()
 	} else if token.Category == NONE {
 		advance()
+	} else if token.Category == INPUT {
+		advance()
+		consume(LEFTPARENT)
+		consume(STRING)
+		consume(RIGHTPARENT)
+	} else if token.Category == INT {
+		advance()
+		consume(LEFTPARENT)
+		relexpr()
+		consume(RIGHTPARENT)
 	} else {
 		fmt.Println("Expecting factor")
 		os.Exit(1)
 	}
 }
+
+/*
+	p3 -> i2 -> i3
+
+	build parser level 3
+
+    p3 grammar include: 
+	<functiondef> -> DEF NAME "(" [<argumentlist>] ")" ":" <codeblock> 
+	global -> GLOBAL <argumentlist> NL?
+	<functioncall> -> NAME "(" [<argumentlist>] ")" NL? 
+	return -> RETURN NL?
+	build-in function , input() -> INPUT "(" STRING ")" NL? 
+	type conversion , int() -> INT "(" <relexpr> ")"
+*/
+
+/*
+	One feature at a time
+	t4 grammar -> need to build t4 tokenizer
+	for, range, len, float convert, support "" for string
+
+	t5 grammar -> support class, list [], and dict {} 
+*/
+
 
 func main() {
     // tokenize input file and store in tokenlist
